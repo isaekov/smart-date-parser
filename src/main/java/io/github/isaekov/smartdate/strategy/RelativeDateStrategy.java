@@ -1,38 +1,50 @@
 package io.github.isaekov.smartdate.strategy;
 
+import io.github.isaekov.smartdate.i18n.RelativeDateVocabulary;
 import java.time.LocalDate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class RelativeDateStrategy implements DateParseStrategy {
 
-    private static final Pattern RELATIVE_PATTERN =
-            Pattern.compile("([+-]\\d+)\\s*(day|days|week|weeks)");
+    private final RelativeDateVocabulary vocabulary;
+
+    private static final Pattern AMOUNT_PATTERN =
+            Pattern.compile("([+-]\\d+)\\s*(\\p{L}+)");
+
+    public RelativeDateStrategy(RelativeDateVocabulary vocabulary) {
+        this.vocabulary = vocabulary;
+    }
 
     @Override
     public boolean supports(String input) {
-        String value = input.trim().toLowerCase();
+        String value = normalize(input);
 
-        return value.equals("today")
-                || value.equals("yesterday")
-                || value.equals("tomorrow")
-                || RELATIVE_PATTERN.matcher(value).matches();
+        return vocabulary.today().contains(value)
+                || vocabulary.yesterday().contains(value)
+                || vocabulary.tomorrow().contains(value)
+                || isRelativeExpression(value);
     }
 
     @Override
     public LocalDate parse(String input) {
-        String value = input.trim().toLowerCase();
+        String value = normalize(input);
 
-        return switch (value) {
-            case "today" -> LocalDate.now();
-            case "yesterday" -> LocalDate.now().minusDays(1);
-            case "tomorrow" -> LocalDate.now().plusDays(1);
-            default -> parseRelative(value);
-        };
+        if (vocabulary.today().contains(value)) {
+            return LocalDate.now();
+        }
+        if (vocabulary.yesterday().contains(value)) {
+            return LocalDate.now().minusDays(1);
+        }
+        if (vocabulary.tomorrow().contains(value)) {
+            return LocalDate.now().plusDays(1);
+        }
+
+        return parseRelative(value);
     }
 
     private LocalDate parseRelative(String value) {
-        Matcher matcher = RELATIVE_PATTERN.matcher(value);
+        Matcher matcher = AMOUNT_PATTERN.matcher(value);
 
         if (!matcher.matches()) {
             throw new IllegalArgumentException("Invalid relative date: " + value);
@@ -41,10 +53,22 @@ public class RelativeDateStrategy implements DateParseStrategy {
         int amount = Integer.parseInt(matcher.group(1));
         String unit = matcher.group(2);
 
-        return switch (unit) {
-            case "day", "days" -> LocalDate.now().plusDays(amount);
-            case "week", "weeks" -> LocalDate.now().plusWeeks(amount);
-            default -> throw new IllegalStateException("Unexpected unit: " + unit);
-        };
+        if (vocabulary.dayUnits().contains(unit)) {
+            return LocalDate.now().plusDays(amount);
+        }
+        if (vocabulary.weekUnits().contains(unit)) {
+            return LocalDate.now().plusWeeks(amount);
+        }
+
+        throw new IllegalArgumentException("Unsupported time unit: " + unit);
+    }
+
+    private String normalize(String input) {
+        return input.trim().toLowerCase();
+    }
+
+    private boolean isRelativeExpression(String value) {
+        Matcher matcher = AMOUNT_PATTERN.matcher(value);
+        return matcher.matches();
     }
 }
